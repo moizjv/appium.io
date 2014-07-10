@@ -19,7 +19,7 @@ module AppiumIo
     include AppiumIo::Files
 
     attr_reader :default_checkout, :git_dir, :appium_repo, :api_docs_repo, :tutorial_repo,
-                :dot_app_repo
+                :dot_app_repo, :dot_exe_repo
 
     # Creates a new Helper object. The appium repository is cloned and updated.
     #
@@ -52,6 +52,11 @@ module AppiumIo
       dot_app_path           = repo_path 'dot_app'
       dot_app_clone_url      = 'https://github.com/appium/appium-dot-app.git'
       @dot_app_repo          = Repo.new path: dot_app_path, clone: dot_app_clone_url, master: true, refresh: opts[:refresh]
+
+      # appium-dot-exe
+      dot_exe_path           = repo_path 'dot_exe'
+      dot_exe_clone_url      = 'https://github.com/appium/appium-dot-exe'
+      @dot_exe_repo          = Repo.new path: dot_exe_path, clone: dot_exe_clone_url, master: true, refresh: opts[:refresh]
     end
 
     def repo_path path
@@ -138,7 +143,7 @@ module AppiumIo
       # tags = @appium_repo.branches
 
       # also publish branches
-      branches = %w[master v0.18.x]
+      branches = %w[master 0.18.x]
       tags.unshift(branches[0]).push(branches[1]);
 
       update_dot_app_images
@@ -147,12 +152,27 @@ module AppiumIo
       puts "Processing: #{tags}"
       tags.each do |tag|
         @appium_repo.checkout tag
-
-        # copy english readme into the english docs
+        dest_folder = join appium_repo.path, 'docs'
+        folders = Dir.entries(dest_folder).select {|folder| File.directory? File.join(dest_folder,folder) and !(folder =='.' || folder == '..') }
         readme_src = join appium_repo.path, 'README.md'
-        readme_dst = join appium_repo.path, 'docs', 'en', 'README.md'
+        dot_app_readme_src = join dot_app_repo.path, 'README.md'
+        dot_exe_readme_src = join dot_exe_repo.path, 'README.md'
+        readme_dst = ""
+        dot_app_readme_dst = ""
+        #For new folder structure
+        if folders.length > 0
+          readme_dst = join appium_repo.path, 'docs', 'en', 'about-appium', 'README.md'
+          dot_app_readme_dst = join appium_repo.path, 'docs', 'en', 'appium-gui', 'dot-app.md'
+          dot_exe_readme_dst = join appium_repo.path, 'docs', 'en', 'appium-gui', 'dot-exe.md'
+        else
+          readme_dst = join appium_repo.path, 'docs', 'en', 'README.md'
+          dot_app_readme_dst = join appium_repo.path, 'docs', 'en', 'dotapptest.md'
+          dot_exe_readme_dst = join appium_repo.path, 'docs', 'en', 'dot-exe.md'
+        end
+        #copying
         _process_appium_readme readme_src, readme_dst
-
+        copy_entry dot_app_readme_src, dot_app_readme_dst
+        copy_entry dot_exe_readme_src, dot_exe_readme_dst
         # process cn readme
         cn_readme_src = join appium_repo.path, 'docs', 'cn', 'README.md'
         if exists?(cn_readme_src)
@@ -163,27 +183,20 @@ module AppiumIo
           File.unlink cn_readme_dst # delete temp file
         end
 
-        # copy english dot app into the english docs
-        dot_app_readme_src = join dot_app_repo.path, 'README.md'
-        dot_app_readme_dst = join appium_repo.path, 'docs', 'en', 'dot_app.md'
-        copy_entry dot_app_readme_src, dot_app_readme_dst
+
         # fix dot app links for Slate
         data = File.read dot_app_readme_dst
         data.gsub!('](/README-files/images/', '](../../images/')
         File.open(dot_app_readme_dst, 'w') { |f| f.write data }
 
-        # copy english contributing into the english docs
-        contributing_src = join @appium_repo.path, 'CONTRIBUTING.md'
-        copy_entry contributing_src, join(@appium_repo.path, 'docs', 'en', 'CONTRIBUTING.md')
-
         source = join @appium_repo.path, 'docs', '*'
         Dir.glob(source) do |path|
-          
+
           next unless File.directory?(path) # languages must be folders not files.
           path               = expand_path path
           language           = basename path
 
-          # `old` dir contains deprecated doc 
+          # `old` dir contains deprecated doc
           next if language == 'old'
 
           dest               = join Dir.pwd, 'docs', language, tag
@@ -193,6 +206,8 @@ module AppiumIo
 
           # delete existing branches
           rm_rf dest if exists?(dest) && branches.include?(tag)
+          puts path
+          puts dest
 
           copy_entry path, dest
 
@@ -364,7 +379,7 @@ YAML
       # - docs/en links to github
       # - sample code links to github
       data.gsub!('](CONTRIBUTING.md)', '](/slate/en/master/#CONTRIBUTING.md)')
-      data.gsub!('](docs/en/)', '](/slate/en/master/)')
+      data.gsub! /]\s*\(\/docs\/en\/.*\//, '](/slate/en/master/#'
       data.gsub!('](sample-code/examples)', '](https://github.com/appium/appium/tree/master/sample-code/examples)')
       File.open(dest, 'w') { |f| f.write(yaml + data) }
     end
@@ -375,7 +390,7 @@ YAML
       @appium_repo.checkout branch
 
       # intro.md doesn't exist in some early tags
-      source = join @appium_repo.path, 'docs', 'en', 'about-appium','intro.md' 
+      source = join @appium_repo.path, 'docs', 'en', 'about-appium','intro.md'
       # previous location
       source = join @appium_repo.path, 'docs', 'en', 'intro.md' unless File.exist?(source)
 
