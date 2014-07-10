@@ -71,12 +71,17 @@ module AppiumIo
       @slate_image_folder
     end
 
-    def update_dot_app_images
+    def update_dot_app_exe_images
       dot_app_repo.checkout 'master'
-
-      # copy dot app images
+      dot_exe_repo.checkout 'master'
+      # copy dot app and exe images
       dot_app_images = join(dot_app_repo.path, 'README-files', '**', '*.png')
+      dot_exe_images = join(dot_exe_repo.path, 'README-files', '**', '*.png')
       Dir.glob(dot_app_images) do |file|
+        next if File.directory?(file)
+        copy_entry file, slate_image_folder
+      end
+      Dir.glob(dot_exe_images) do |file|
         next if File.directory?(file)
         copy_entry file, slate_image_folder
       end
@@ -146,7 +151,7 @@ module AppiumIo
       branches = %w[master 0.18.x]
       tags.unshift(branches[0]).push(branches[1]);
 
-      update_dot_app_images
+      update_dot_app_exe_images
 
       metadata = Hash.new []
       puts "Processing: #{tags}"
@@ -189,6 +194,11 @@ module AppiumIo
         data.gsub!('](/README-files/images/', '](../../images/')
         File.open(dot_app_readme_dst, 'w') { |f| f.write data }
 
+        # fix dot exe links for slate
+        data = File.read dot_exe_readme_dst
+        data.gsub!('](/README-files/', '](../../images/')
+        File.open(dot_exe_readme_dst, 'w') { |f| f.write data }
+
         source = join @appium_repo.path, 'docs', '*'
         Dir.glob(source) do |path|
 
@@ -206,9 +216,6 @@ module AppiumIo
 
           # delete existing branches
           rm_rf dest if exists?(dest) && branches.include?(tag)
-          puts path
-          puts dest
-
           copy_entry path, dest
 
           puts "Processing with slate: #{language} #{tag}"
@@ -325,7 +332,7 @@ transforms into:
         if(link_target =~  /^\/?docs\/.*\/$/ )
           # links to main doc page
           result = link_target.gsub(/^\/?docs\/(.*)\/$/) do |lang|
-            res = '[%s](/documentation.html?lang=%s)' % [link_text, $1] 
+            res = '[%s](/documentation.html?lang=%s)' % [link_text, $1]
           end
         elsif link_target && link_target =~ prefix
           # links to specific doc sections
